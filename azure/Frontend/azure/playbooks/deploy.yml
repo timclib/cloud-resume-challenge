@@ -1,0 +1,75 @@
+---
+- name: Deploy Azure Storage Account
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  collections:
+   - azure.azcollection
+
+  vars:
+    resource_group: cloud-resume
+    location: eastus
+    storage_account_name: timcloudresume2026
+    bicep_file: "{{ playbook_dir }}/../main.bicep"
+    built_json: "{{ playbook_dir}}/../main.built.json"
+    deployment_name: "crc-deploy"
+
+  tasks:
+    - name: Compile Bicep -> ARM JSON (using bicep via Azure CLI)
+      ansible.builtin.command:  >
+        az bicep build
+        --file {{ bicep_file }}
+        --outfile {{ built_json }}
+      changed_when: true
+
+
+    - name: Ensure resource group exists
+        azure.azcollection.azure_rm_resource_group:
+          name: "{{ resource_group }}"
+          location: "{{ location }}"
+
+    - name: Load compiled ARM template
+      ansible.builtin.set_fact:
+        arm_template: "{{ lookup('file', built_json) | from_json }}"
+    
+    - name: Deploy template with parameters (via azure_rm_deployment)
+      azure.azcollection.azure_rm_deployment:
+        resource_group: "{{ resource_group }}"
+        name: "{{ deployment_name }}"
+        state: present
+
+        template: "{{ arm_template }}"
+        deployment_mode: incremental
+        parameters:
+          location:
+            value: "{{ location }}"
+          name:
+            value: "{{ storage_account_name }}"
+      register: deploy_out
+    
+  
+    - name: Show deployment result summary
+      ansible.builtin.debug:
+        msg:
+        - "Deployment state: {{ deploy_out.deployment.properties.provisioningState | default('Unknown')}}"
+        - "Storage Account name: {{ storage_account_name }}"
+        - "Resource Group: {{ resource_group }}"
+        - "Location: {{ location }}"
+
+    - name: Enable static website hosting
+      ansible.builtin.command:
+        cmd: >
+          az storage blob service-properties update
+          --account-name {{ storage_account_name }}
+          --static-website
+          --index-document index.html
+          --404-document 404.html
+    - name: Deploy infrastructure
+      ansible.builtin.command:
+        cmd: >
+          az deployment group create
+          --resource-group cloud-resume
+          --template-file azure/bicep/main.bicep
+          --parameters
+          storageAccountName=timclib2026
+          cosmosAccountName=timclib-cosmos

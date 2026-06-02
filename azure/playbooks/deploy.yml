@@ -1,0 +1,23 @@
+---
+- name: Enable Azure Static Website
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    resource_group: cloud-resume
+    storage_account_name: timcloudresume2026
+
+  tasks:
+    - name: Deploy Bicep template
+      ansible.builtin.command:
+        cmd: >
+          az deployment group create
+          --resource-group {{ resource_group }}
+          --template-file infra/enable-static-website.bicep
+          --parameters storageAccountName={{ storage_account_name }}
+      register: deployment_result
+
+    - name: Show deployment result
+      debug:
+        var: deployment_result.stdout
